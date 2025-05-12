@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Food POS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom Styles */
+        body {
+            font-family: 'Roboto', sans-serif;
+            overscroll-behavior-y: contain; /* Prevents pull-to-refresh on mobile when scrolling views */
+        }
+
+        /* Active Nav Button Style */
+        .active-nav-button {
+            background-color: #1D4ED8; /* Tailwind blue-700 */
+            color: white;
+        }
+
+        /* View Management */
+        .view {
+            display: none; /* Hidden by default */
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .active-view {
+            display: block; /* Shown when active */
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Product Card Styling */
+        .product-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .product-card img {
+            object-fit: cover;
+            height: 100px; /* Fixed height for product images */
+            width: 100%;
+        }
+
+        /* Scrollbar styling for product/category lists */
+        .scrollable-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scrollable-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .scrollable-list::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .scrollable-list::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Modal Styling */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5); /* Dim background */
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px; /* Max width for bill */
+            border-radius: 8px;
+            position: relative;
+        }
+        .modal-header {
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+            font-size: 1.5rem;
+        }
+        .modal-body {
+            padding: 10px 0;
+        }
+        .modal-footer {
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+            text-align: right;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            position: absolute;
+            top: 10px;
+            right: 20px;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        /* Print-specific styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #bill-print-area, #bill-print-area * {
+                visibility: visible;
+            }
+            #bill-print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            .modal-footer button, .close-button {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <nav id="main-nav" class="bg-blue-600 p-4 shadow-md sticky top-0 z-50">
+        <div class="container mx-auto flex justify-center space-x-4">
+            <button data-view="order-view" class="nav-button px-6 py-2 rounded-md text-white font-medium hover:bg-blue-700 transition duration-150 active-nav-button">Order</button>
+            <button data-view="admin-view" class="nav-button px-6 py-2 rounded-md text-white font-medium hover:bg-blue-700 transition duration-150">Admin</button>
+            <button data-view="reports-view" class="nav-button px-6 py-2 rounded-md text-white font-medium hover:bg-blue-700 transition duration-150">Reports</button>
+        </div>
+    </nav>
+
+    <main id="app-container" class="container mx-auto p-4 mt-4">
+
+        <section id="order-view" class="view active-view">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-2 bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-blue-600">Select Products</h2>
+                    <div id="category-filters" class="mb-6 flex flex-wrap gap-2">
+                        <button class="category-filter-btn bg-gray-200 hover:bg-blue-500 hover:text-white text-gray-700 font-semibold py-2 px-4 rounded-full transition duration-150" data-category-id="all">All</button>
+                        </div>
+                    <div id="products-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 scrollable-list max-h-[60vh] overflow-y-auto p-2">
+                        </div>
+                </div>
+
+                <div class="md:col-span-1 bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-green-600">Current Order</h2>
+                    <div id="current-order-items" class="space-y-2 mb-4 min-h-[200px] max-h-[40vh] overflow-y-auto scrollable-list pr-2">
+                        <p class="text-gray-500 italic">No items added yet.</p>
+                        </div>
+                    <div class="border-t pt-4 space-y-2">
+                        <div class="flex justify-between font-medium">
+                            <span>Subtotal:</span>
+                            <span id="order-subtotal">$0.00</span>
+                        </div>
+                        <div class="flex justify-between font-medium">
+                            <span>Tax (10%):</span>
+                            <span id="order-tax">$0.00</span>
+                        </div>
+                        <div class="flex justify-between text-xl font-bold text-green-700">
+                            <span>Total:</span>
+                            <span id="order-total">$0.00</span>
+                        </div>
+                    </div>
+                    <div class="mt-6 space-y-3">
+                        <button id="pay-cash-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150">Pay Cash</button>
+                        <button id="pay-card-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-150">Pay Card (Simulated)</button>
+                        <button id="clear-order-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">Clear Order</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="admin-view" class="view">
+            <h2 class="text-3xl font-semibold mb-6 text-center text-gray-700">Admin Panel</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-lg shadow-xl">
+                    <h3 class="text-xl font-semibold mb-4 text-purple-600">Manage Categories</h3>
+                    <form id="category-form" class="space-y-4">
+                        <input type="hidden" id="category-id">
+                        <div>
+                            <label for="category-name" class="block text-sm font-medium text-gray-700">Category Name:</label>
+                            <input type="text" id="category-name" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
+                        </div>
+                        <button type="submit" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-md transition duration-150">Save Category</button>
+                    </form>
+                    <div id="categories-list-admin" class="mt-6 scrollable-list max-h-60 overflow-y-auto">
+                        <h4 class="text-md font-semibold mb-2 text-gray-600">Existing Categories:</h4>
+                        </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow-xl">
+                    <h3 class="text-xl font-semibold mb-4 text-teal-600">Manage Products</h3>
+                    <form id="product-form" class="space-y-4">
+                        <input type="hidden" id="product-id">
+                        <div>
+                            <label for="product-name" class="block text-sm font-medium text-gray-700">Product Name:</label>
+                            <input type="text" id="product-name-admin" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
+                        </div>
+                        <div>
+                            <label for="product-category-admin" class="block text-sm font-medium text-gray-700">Category:</label>
+                            <select id="product-category-select-admin" class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
+                                </select>
+                        </div>
+                        <div>
+                            <label for="product-price-admin" class="block text-sm font-medium text-gray-700">Price ($):</label>
+                            <input type="number" id="product-price-admin" step="0.01" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required>
+                        </div>
+                        <div>
+                            <label for="product-image-admin" class="block text-sm font-medium text-gray-700">Image URL:</label>
+                            <input type="text" id="product-image-admin" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="e.g., https://placehold.co/100x100?text=Item">
+                            <small class="text-xs text-gray-500">Use placeholder URLs like https://placehold.co/100x100?text=YourItem</small>
+                        </div>
+                        <button type="submit" class="w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-md transition duration-150">Save Product</button>
+                    </form>
+                     <div id="products-list-admin" class="mt-6 scrollable-list max-h-96 overflow-y-auto">
+                        <h4 class="text-md font-semibold mb-2 text-gray-600">Existing Products:</h4>
+                        </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="reports-view" class="view">
+            <div class="bg-white p-6 rounded-lg shadow-xl">
+                <h2 class="text-3xl font-semibold mb-6 text-center text-gray-700">Sales Reports</h2>
+                <div class="mb-6 flex flex-col sm:flex-row items-center gap-4">
+                    <label for="report-period" class="text-sm font-medium text-gray-700">Select Period:</label>
+                    <select id="report-period" class="block w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="today">Today</option>
+                        <option value="last7days">Last 7 Days</option>
+                        <option value="this_month">This Month</option>
+                        <option value="all_time">All Time</option>
+                    </select>
+                    <button id="generate-report-btn" class="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-md transition duration-150">Generate Report</button>
+                </div>
+                <div id="report-output" class="mt-6 space-y-4">
+                    <p class="text-gray-500 italic">Select a period and generate a report to see data.</p>
+                    </div>
+                 <div id="report-summary" class="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-700">Summary</h3>
+                    <p>Total Orders: <span id="total-orders-report" class="font-bold">0</span></p>
+                    <p>Total Revenue: <span id="total-revenue-report" class="font-bold">$0.00</span></p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="bill-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" id="close-bill-modal-btn">&times;</span>
+            <div id="bill-print-area">
+                <div class="modal-header">
+                    <h2 class="text-2xl font-semibold">Receipt</h2>
+                </div>
+                <div id="bill-content" class="modal-body py-4 px-2 text-sm">
+                    </div>
+            </div>
+            <div class="modal-footer mt-4 text-right">
+                <button id="print-actual-bill-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition duration-150">Print</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-notification" class="fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-xl text-sm z-[1001]" style="display: none;">
+        Notification message
+    </div>
+
+
+<script>
+// --- POS Application Script ---
+
+// --- Database (IndexedDB) ---
+const DB_NAME = 'POS_DB';
+const DB_VERSION = 1;
+const STORES = {
+    CATEGORIES: 'categories',
+    PRODUCTS: 'products',
+    ORDERS: 'orders'
+};
+
+let db; // Database instance
+
+const posDB = {
+    // Initialize the database
+    async initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onerror = (event) => {
+                console.error("Database error:", event.target.errorCode);
+                reject("Database error: " + event.target.errorCode);
+            };
+
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                console.log("Database opened successfully.");
+                resolve(db);
+            };
+
+            request.onupgradeneeded = (event) => {
+                db = event.target.result;
+                console.log("Database upgrade needed.");
+
+                // Create Categories Store
+                if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
+                    const categoryStore = db.createObjectStore(STORES.CATEGORIES, { keyPath: 'id', autoIncrement: true });
+                    categoryStore.createIndex('name', 'name', { unique: true });
+                    console.log(`Object store '${STORES.CATEGORIES}' created.`);
+                }
+
+                // Create Products Store
+                if (!db.objectStoreNames.contains(STORES.PRODUCTS)) {
+                    const productStore = db.createObjectStore(STORES.PRODUCTS, { keyPath: 'id', autoIncrement: true });
+                    productStore.createIndex('name', 'name', { unique: false }); // Product names might not be unique across categories
+                    productStore.createIndex('categoryId', 'categoryId', { unique: false });
+                    console.log(`Object store '${STORES.PRODUCTS}' created.`);
+                }
+
+                // Create Orders Store
+                if (!db.objectStoreNames.contains(STORES.ORDERS)) {
+                    const orderStore = db.createObjectStore(STORES.ORDERS, { keyPath: 'id', autoIncrement: true });
+                    orderStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    console.log(`Object store '${STORES.ORDERS}' created.`);
+                }
+                console.log("Database upgrade complete.");
+            };
+        });
+    },
+
+    // Populate with Demo Data if stores are empty
+    async populateDemoData() {
+        // Demo Categories
+        const demoCategories = [
+            { name: 'Burgers' },
+            { name: 'Drinks' },
+            { name: 'Sides' },
+            { name: 'Desserts' }
+        ];
+
+        // Demo Products
+        const demoProducts = [
+            { name: 'Classic Beef Burger', categoryName: 'Burgers', price: 5.99, imageUrl: 'https://placehold.co/100x100/FF6347/FFFFFF?text=BeefBurger' },
+            { name: 'Chicken Deluxe Sandwich', categoryName: 'Burgers', price: 6.49, imageUrl: 'https://placehold.co/100x100/FFD700/000000?text=ChickenSandwich' },
+            { name: 'Veggie Burger', categoryName: 'Burgers', price: 5.49, imageUrl: 'https://placehold.co/100x100/32CD32/FFFFFF?text=VeggieBurger' },
+            { name: 'Cola', categoryName: 'Drinks', price: 1.99, imageUrl: 'https://placehold.co/100x100/8B0000/FFFFFF?text=Cola' },
+            { name: 'Lemonade', categoryName: 'Drinks', price: 2.29, imageUrl: 'https://placehold.co/100x100/FFFFE0/000000?text=Lemonade' },
+            { name: 'Mineral Water', categoryName: 'Drinks', price: 1.50, imageUrl: 'https://placehold.co/100x100/ADD8E6/000000?text=Water' },
+            { name: 'French Fries (M)', categoryName: 'Sides', price: 2.49, imageUrl: 'https://placehold.co/100x100/FFA500/000000?text=Fries' },
+            { name: 'Onion Rings', categoryName: 'Sides', price: 3.00, imageUrl: 'https://placehold.co/100x100/D2B48C/000000?text=OnionRings' },
+            { name: 'Chocolate Sundae', categoryName: 'Desserts', price: 3.50, imageUrl: 'https://placehold.co/100x100/A52A2A/FFFFFF?text=Sundae' },
+            { name: 'Apple Pie', categoryName: 'Desserts', price: 2.79, imageUrl: 'https://placehold.co/100x100/F5DEB3/000000?text=ApplePie' }
+        ];
+
+        try {
+            // Add categories first
+            const catTransaction = db.transaction(STORES.CATEGORIES, 'readwrite');
+            const categoryStore = catTransaction.objectStore(STORES.CATEGORIES);
+            const existingCategoriesCount = await new Promise((resolve, reject) => {
+                const countReq = categoryStore.count();
+                countReq.onsuccess = () => resolve(countReq.result);
+                countReq.onerror = (e) => reject(e);
+            });
+
+            if (existingCategoriesCount === 0) {
+                for (const cat of demoCategories) {
+                    await new Promise((resolve, reject) => {
+                        const req = categoryStore.add(cat);
+                        req.onsuccess = resolve;
+                        req.onerror = (e) => { console.warn(`Could not add demo category ${cat.name}:`, e.target.error); resolve(); }; // Resolve even if one fails
+                    });
+                }
+                console.log("Demo categories populated.");
+            } else {
+                console.log("Categories store not empty, skipping demo categories.");
+            }
+            await new Promise(resolve => catTransaction.oncomplete = resolve);
+
+
+            // Get all categories to map names to IDs for products
+            const allCategories = await this.getAll(STORES.CATEGORIES);
+            const categoryMap = allCategories.reduce((map, cat) => {
+                map[cat.name] = cat.id;
+                return map;
+            }, {});
+
+            // Add products
+            const prodTransaction = db.transaction(STORES.PRODUCTS, 'readwrite');
+            const productStore = prodTransaction.objectStore(STORES.PRODUCTS);
+            const existingProductsCount = await new Promise((resolve, reject) => {
+                const countReq = productStore.count();
+                countReq.onsuccess = () => resolve(countReq.result);
+                countReq.onerror = (e) => reject(e);
+            });
+
+            if (existingProductsCount === 0) {
+                for (const prod of demoProducts) {
+                    if (categoryMap[prod.categoryName]) {
+                        await new Promise((resolve, reject) => {
+                            const req = productStore.add({
+                                name: prod.name,
+                                categoryId: categoryMap[prod.categoryName],
+                                price: prod.price,
+                                imageUrl: prod.imageUrl
+                            });
+                            req.onsuccess = resolve;
+                            req.onerror = (e) => { console.warn(`Could not add demo product ${prod.name}:`, e.target.error); resolve(); };
+                        });
+                    } else {
+                        console.warn(`Category '${prod.categoryName}' not found for product '${prod.name}'.`);
+                    }
+                }
+                console.log("Demo products populated.");
+            } else {
+                console.log("Products store not empty, skipping demo products.");
+            }
+             await new Promise(resolve => prodTransaction.oncomplete = resolve);
+
+        } catch (error) {
+            console.error("Error populating demo data:", error);
+        }
+    },
+
+    // Generic add item
+    async add(storeName, item) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.add(item);
+            request.onsuccess = (event) => resolve(event.target.result); // Returns the key of the new object
+            request.onerror = (event) => reject("Error adding item: " + event.target.errorCode);
+        });
+    },
+
+    // Generic get item by ID
+    async get(storeName, id) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.get(id);
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject("Error getting item: " + event.target.errorCode);
+        });
+    },
+
+    // Generic get all items
+    async getAll(storeName) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.getAll();
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject("Error getting all items: " + event.target.errorCode);
+        });
+    },
+
+    // Generic update item
+    async update(storeName, item) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.put(item); // put() updates if key exists, adds if not.
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject("Error updating item: " + event.target.errorCode);
+        });
+    },
+
+    // Generic delete item
+    async delete(storeName, id) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.delete(id);
+            request.onsuccess = () => resolve(true);
+            request.onerror = (event) => reject("Error deleting item: " + event.target.errorCode);
+        });
+    },
+
+    // Get products by category ID
+    async getProductsByCategoryId(categoryId) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORES.PRODUCTS, 'readonly');
+            const store = transaction.objectStore(STORES.PRODUCTS);
+            const index = store.index('categoryId');
+            const request = index.getAll(categoryId);
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject("Error getting products by category: " + event.target.errorCode);
+        });
+    },
+
+    // Get orders within a date range
+    async getOrdersByPeriod(startDate, endDate) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORES.ORDERS, 'readonly');
+            const store = transaction.objectStore(STORES.ORDERS);
+            const index = store.index('timestamp');
+            const range = IDBKeyRange.bound(startDate.getTime(), endDate.getTime());
+            const request = index.getAll(range);
+
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject("Error getting orders by period: " + event.target.errorCode);
+        });
+    }
+};
+
+// --- Application Logic ---
+const app = {
+    currentOrder: [], // Array of { productId, name, price, quantity }
+    activeView: 'order-view',
+    taxRate: 0.10, // 10% tax
+
+    init() {
+        // Initialize DB and then load UI elements
+        posDB.initDB()
+            .then(async () => {
+                await posDB.populateDemoData(); // Populate demo data if needed
+                this.setupEventListeners();
+                this.switchView('order-view'); // Default view
+                this.loadCategoriesForOrdering();
+                this.loadProductsForOrdering('all'); // Load all products initially
+                this.updateCurrentOrderDisplay(); // Ensure order display is correct on load
+            })
+            .catch(error => {
+                console.error("Failed to initialize application:", error);
+                alert("Error initializing POS system. Please check console for details.");
+            });
+    },
+
+    setupEventListeners() {
+        // Navigation
+        document.querySelectorAll('#main-nav .nav-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                this.switchView(e.target.dataset.view);
+            });
+        });
+
+        // Order View
+        document.getElementById('category-filters').addEventListener('click', (e) => {
+            if (e.target.classList.contains('category-filter-btn')) {
+                this.loadProductsForOrdering(e.target.dataset.categoryId);
+                // Active button styling for category filters
+                document.querySelectorAll('#category-filters .category-filter-btn').forEach(btn => btn.classList.remove('bg-blue-500', 'text-white'));
+                e.target.classList.add('bg-blue-500', 'text-white');
+            }
+        });
+        document.getElementById('products-grid').addEventListener('click', (e) => {
+            const productCard = e.target.closest('.product-card');
+            if (productCard) {
+                this.addToOrder(parseInt(productCard.dataset.productId));
+            }
+        });
+        document.getElementById('current-order-items').addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-item-btn')) {
+                this.removeFromOrder(parseInt(e.target.dataset.productId));
+            } else if (e.target.classList.contains('decrease-qty-btn')) {
+                this.updateOrderItemQuantity(parseInt(e.target.dataset.productId), -1);
+            } else if (e.target.classList.contains('increase-qty-btn')) {
+                this.updateOrderItemQuantity(parseInt(e.target.dataset.productId), 1);
+            }
+        });
+        document.getElementById('clear-order-btn').addEventListener('click', () => this.clearOrder());
+        document.getElementById('pay-cash-btn').addEventListener('click', () => this.processPayment('Cash'));
+        document.getElementById('pay-card-btn').addEventListener('click', () => this.processPayment('Card'));
+
+        // Admin View - Category Form
+        document.getElementById('category-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveCategory();
+        });
+        document.getElementById('categories-list-admin').addEventListener('click', (e) => {
+            if (e.target.classList.contains('edit-category-btn')) {
+                this.handleEditCategory(parseInt(e.target.dataset.categoryId));
+            } else if (e.target.classList.contains('delete-category-btn')) {
+                this.handleDeleteCategory(parseInt(e.target.dataset.categoryId));
+            }
+        });
+
+        // Admin View - Product Form
+        document.getElementById('product-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleSaveProduct();
+        });
+        document.getElementById('products-list-admin').addEventListener('click', (e) => {
+            if (e.target.classList.contains('edit-product-btn')) {
+                this.handleEditProduct(parseInt(e.target.dataset.productId));
+            } else if (e.target.classList.contains('delete-product-btn')) {
+                this.handleDeleteProduct(parseInt(e.target.dataset.productId));
+            }
+        });
+
+        // Reports View
+        document.getElementById('generate-report-btn').addEventListener('click', () => this.generateSalesReport());
+
+        // Bill Modal
+        document.getElementById('close-bill-modal-btn').addEventListener('click', () => this.closeBillModal());
+        document.getElementById('print-actual-bill-btn').addEventListener('click', () => this.printBill());
+    },
+
+    switchView(viewId) {
+        document.querySelectorAll('.view').forEach(view => view.classList.remove('active-view'));
+        document.getElementById(viewId).classList.add('active-view');
+        this.activeView = viewId;
+
+        // Update active nav button
+        document.querySelectorAll('#main-nav .nav-button').forEach(button => {
+            button.classList.remove('active-nav-button');
+            if (button.dataset.view === viewId) {
+                button.classList.add('active-nav-button');
+            }
+        });
+
+        // Load data for specific views when switched
+        if (viewId === 'admin-view') {
+            this.loadCategoriesForAdmin();
+            this.loadProductsForAdmin();
+        } else if (viewId === 'order-view') {
+            this.loadCategoriesForOrdering();
+            this.loadProductsForOrdering('all'); // Or last selected category
+        } else if (viewId === 'reports-view') {
+            this.generateSalesReport(); // Initial report for 'today'
+        }
+    },
+
+    showToast(message, type = 'success') {
+        const toast = document.getElementById('toast-notification');
+        toast.textContent = message;
+        toast.className = 'fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-xl text-sm z-[1001]'; // Reset classes
+        if (type === 'success') {
+            toast.classList.add('bg-green-500');
+        } else if (type === 'error') {
+            toast.classList.add('bg-red-500');
+        } else { // info
+            toast.classList.add('bg-blue-500');
+        }
+        toast.style.display = 'block';
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 3000);
+    },
+
+    // --- Order View Logic ---
+    async loadCategoriesForOrdering() {
+        try {
+            const categories = await posDB.getAll(STORES.CATEGORIES);
+            const filtersContainer = document.getElementById('category-filters');
+            // Clear existing (except 'All' button)
+            const allButton = filtersContainer.querySelector('[data-category-id="all"]');
+            filtersContainer.innerHTML = '';
+            filtersContainer.appendChild(allButton); // Re-add 'All' button
+
+            categories.forEach(cat => {
+                const button = document.createElement('button');
+                button.className = 'category-filter-btn bg-gray-200 hover:bg-blue-500 hover:text-white text-gray-700 font-semibold py-2 px-4 rounded-full transition duration-150';
+                button.textContent = cat.name;
+                button.dataset.categoryId = cat.id;
+                filtersContainer.appendChild(button);
+            });
+            // Set 'All' as active by default
+            allButton.classList.add('bg-blue-500', 'text-white');
+
+        } catch (error) {
+            console.error("Error loading categories for ordering:", error);
+            this.showToast("Failed to load categories.", "error");
+        }
+    },
+
+    async loadProductsForOrdering(categoryId) {
+        try {
+            let products;
+            if (categoryId === 'all' || !categoryId) {
+                products = await posDB.getAll(STORES.PRODUCTS);
+            } else {
+                products = await posDB.getProductsByCategoryId(parseInt(categoryId));
+            }
+            const grid = document.getElementById('products-grid');
+            grid.innerHTML = ''; // Clear existing products
+
+            if (products.length === 0) {
+                grid.innerHTML = '<p class="col-span-full text-center text-gray-500">No products found in this category.</p>';
+                return;
+            }
+
+            products.forEach(prod => {
+                const card = document.createElement('div');
+                card.className = 'product-card bg-white border border-gray-200 rounded-lg shadow-sm p-3 flex flex-col items-center text-center cursor-pointer';
+                card.dataset.productId = prod.id;
+                card.innerHTML = `
+                    <img src="${prod.imageUrl || 'https://placehold.co/100x100?text=NoImage'}" alt="${prod.name}" class="rounded mb-2 h-24 w-full object-cover">
+                    <h4 class="font-semibold text-sm mb-1">${prod.name}</h4>
+                    <p class="text-green-600 font-bold text-md">$${prod.price.toFixed(2)}</p>
+                `;
+                grid.appendChild(card);
+            });
+        } catch (error) {
+            console.error("Error loading products for ordering:", error);
+            this.showToast("Failed to load products.", "error");
+        }
+    },
+
+    async addToOrder(productId) {
+        try {
+            const product = await posDB.get(STORES.PRODUCTS, productId);
+            if (!product) return;
+
+            const existingItem = this.currentOrder.find(item => item.productId === productId);
+            if (existingItem) {
+                existingItem.quantity++;
+            } else {
+                this.currentOrder.push({
+                    productId: product.id,
+                    name: product.name,
+                    price: product.price,
+                    quantity: 1
+                });
+            }
+            this.updateCurrentOrderDisplay();
+            this.showToast(`${product.name} added to order.`, 'success');
+        } catch (error) {
+            console.error("Error adding to order:", error);
+            this.showToast("Failed to add item to order.", "error");
+        }
+    },
+
+    removeFromOrder(productId) {
+        this.currentOrder = this.currentOrder.filter(item => item.productId !== productId);
+        this.updateCurrentOrderDisplay();
+        this.showToast(`Item removed from order.`, 'info');
+    },
+
+    updateOrderItemQuantity(productId, change) {
+        const item = this.currentOrder.find(item => item.productId === productId);
+        if (item) {
+            item.quantity += change;
+            if (item.quantity <= 0) {
+                this.removeFromOrder(productId); // Remove if quantity is zero or less
+            } else {
+                this.updateCurrentOrderDisplay();
+            }
+        }
+    },
+
+    updateCurrentOrderDisplay() {
+        const itemsContainer = document.getElementById('current-order-items');
+        itemsContainer.innerHTML = ''; // Clear previous items
+
+        if (this.currentOrder.length === 0) {
+            itemsContainer.innerHTML = '<p class="text-gray-500 italic">No items added yet.</p>';
+        } else {
+            this.currentOrder.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex justify-between items-center py-2 border-b border-gray-200 last:border-b-0';
+                itemDiv.innerHTML = `
+                    <div>
+                        <span class="font-medium">${item.name}</span>
+                        <span class="text-xs text-gray-500 block">($${item.price.toFixed(2)} each)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="decrease-qty-btn bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded-full text-xs" data-product-id="${item.productId}">-</button>
+                        <span>${item.quantity}</span>
+                        <button class="increase-qty-btn bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded-full text-xs" data-product-id="${item.productId}">+</button>
+                        <span class="font-semibold w-16 text-right">$${(item.price * item.quantity).toFixed(2)}</span>
+                        <button class="remove-item-btn text-red-500 hover:text-red-700 text-xl" data-product-id="${item.productId}">&times;</button>
+                    </div>
+                `;
+                itemsContainer.appendChild(itemDiv);
+            });
+        }
+        this.calculateTotals();
+    },
+
+    calculateTotals() {
+        const subtotal = this.currentOrder.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const tax = subtotal * this.taxRate;
+        const total = subtotal + tax;
+
+        document.getElementById('order-subtotal').textContent = `$${subtotal.toFixed(2)}`;
+        document.getElementById('order-tax').textContent = `$${tax.toFixed(2)}`;
+        document.getElementById('order-total').textContent = `$${total.toFixed(2)}`;
+    },
+
+    clearOrder() {
+        this.currentOrder = [];
+        this.updateCurrentOrderDisplay();
+        this.showToast("Order cleared.", "info");
+    },
+
+    async processPayment(paymentMethod) {
+        if (this.currentOrder.length === 0) {
+            this.showToast("Cannot process empty order.", "error");
+            return;
+        }
+
+        const subtotal = this.currentOrder.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const tax = subtotal * this.taxRate;
+        const total = subtotal + tax;
+
+        const orderData = {
+            items: JSON.parse(JSON.stringify(this.currentOrder)), // Deep copy
+            subtotal: subtotal,
+            tax: tax,
+            total: total,
+            paymentMethod: paymentMethod,
+            timestamp: new Date().getTime()
+        };
+
+        try {
+            const orderId = await posDB.add(STORES.ORDERS, orderData);
+            orderData.id = orderId; // Add the generated ID to the orderData for the bill
+            this.showToast(`Order #${orderId} processed successfully!`, 'success');
+            this.showBillModal(orderData);
+            this.clearOrder();
+        } catch (error) {
+            console.error("Error processing payment:", error);
+            this.showToast("Failed to process payment.", "error");
+        }
+    },
+
+    // --- Bill Modal Logic ---
+    showBillModal(order) {
+        const billContent = document.getElementById('bill-content');
+        let itemsHtml = order.items.map(item => `
+            <div class="flex justify-between py-1">
+                <span>${item.name} (x${item.quantity})</span>
+                <span>$${(item.price * item.quantity).toFixed(2)}</span>
+            </div>
+        `).join('');
+
+        billContent.innerHTML = `
+            <p class="text-center mb-2"><strong>Fast Food POS</strong></p>
+            <p>Order ID: <span class="font-mono">${order.id}</span></p>
+            <p>Date: ${new Date(order.timestamp).toLocaleString()}</p>
+            <p>Payment: ${order.paymentMethod}</p>
+            <hr class="my-2">
+            ${itemsHtml}
+            <hr class="my-2">
+            <div class="flex justify-between font-medium"><span>Subtotal:</span> <span>$${order.subtotal.toFixed(2)}</span></div>
+            <div class="flex justify-between font-medium"><span>Tax (${(this.taxRate * 100).toFixed(0)}%):</span> <span>$${order.tax.toFixed(2)}</span></div>
+            <div class="flex justify-between font-bold text-lg mt-1"><span>Total:</span> <span>$${order.total.toFixed(2)}</span></div>
+            <p class="text-center mt-4 text-xs">Thank you for your purchase!</p>
+        `;
+        document.getElementById('bill-modal').style.display = 'flex';
+    },
+
+    closeBillModal() {
+        document.getElementById('bill-modal').style.display = 'none';
+    },
+
+    printBill() {
+        window.print();
+        this.showToast("Print dialog initiated.", "info");
+    },
+
+    // --- Admin View Logic ---
+    async loadCategoriesForAdmin() {
+        try {
+            const categories = await posDB.getAll(STORES.CATEGORIES);
+            const listContainer = document.getElementById('categories-list-admin');
+            listContainer.innerHTML = '<h4 class="text-md font-semibold mb-2 text-gray-600">Existing Categories:</h4>'; // Reset header
+            if (categories.length === 0) {
+                listContainer.innerHTML += '<p class="text-gray-500 italic">No categories found.</p>';
+                return;
+            }
+            const ul = document.createElement('ul');
+            ul.className = 'space-y-2';
+            categories.forEach(cat => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100';
+                li.innerHTML = `
+                    <span>${cat.name} (ID: ${cat.id})</span>
+                    <div class="space-x-2">
+                        <button class="edit-category-btn text-blue-500 hover:text-blue-700 text-xs" data-category-id="${cat.id}">Edit</button>
+                        <button class="delete-category-btn text-red-500 hover:text-red-700 text-xs" data-category-id="${cat.id}">Delete</button>
+                    </div>
+                `;
+                ul.appendChild(li);
+            });
+            listContainer.appendChild(ul);
+
+            // Populate category select in product form
+            const productCategorySelect = document.getElementById('product-category-select-admin');
+            productCategorySelect.innerHTML = '<option value="">-- Select Category --</option>';
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.id;
+                option.textContent = cat.name;
+                productCategorySelect.appendChild(option);
+            });
+
+        } catch (error) {
+            console.error("Error loading categories for admin:", error);
+            this.showToast("Failed to load categories for admin.", "error");
+        }
+    },
+
+    async handleSaveCategory() {
+        const categoryIdInput = document.getElementById('category-id');
+        const categoryNameInput = document.getElementById('category-name');
+        const categoryName = categoryNameInput.value.trim();
+        const categoryId = categoryIdInput.value ? parseInt(categoryIdInput.value) : null;
+
+        if (!categoryName) {
+            this.showToast("Category name cannot be empty.", "error");
+            return;
+        }
+
+        const categoryData = { name: categoryName };
+        if (categoryId) {
+            categoryData.id = categoryId;
+        }
+
+        try {
+            if (categoryId) {
+                await posDB.update(STORES.CATEGORIES, categoryData);
+                this.showToast("Category updated successfully!", "success");
+            } else {
+                await posDB.add(STORES.CATEGORIES, categoryData);
+                this.showToast("Category added successfully!", "success");
+            }
+            categoryIdInput.value = ''; // Clear ID for next new entry
+            categoryNameInput.value = '';
+            this.loadCategoriesForAdmin(); // Refresh list
+            this.loadCategoriesForOrdering(); // Refresh order view filters
+        } catch (error) {
+            console.error("Error saving category:", error);
+            if (error.toString().includes("ConstraintError")) {
+                 this.showToast("Category name already exists.", "error");
+            } else {
+                 this.showToast("Failed to save category.", "error");
+            }
+        }
+    },
+
+    async handleEditCategory(categoryId) {
+        try {
+            const category = await posDB.get(STORES.CATEGORIES, categoryId);
+            if (category) {
+                document.getElementById('category-id').value = category.id;
+                document.getElementById('category-name').value = category.name;
+                this.showToast(`Editing category: ${category.name}`, 'info');
+            }
+        } catch (error) {
+            console.error("Error fetching category for edit:", error);
+            this.showToast("Failed to load category for editing.", "error");
+        }
+    },
+
+    async handleDeleteCategory(categoryId) {
+        if (confirm("Are you sure you want to delete this category? This might affect products in this category.")) {
+            try {
+                // Optional: Check if products exist in this category before deleting
+                const productsInCategory = await posDB.getProductsByCategoryId(categoryId);
+                if (productsInCategory.length > 0) {
+                    if (!confirm(`This category has ${productsInCategory.length} product(s). Deleting it will NOT delete the products but they will lose their category link. Continue?`)) {
+                        return;
+                    }
+                     // If you want to disallow deletion or handle products (e.g., set categoryId to null or delete them)
+                     // For now, we just warn. A better approach would be to set product.categoryId to null or a default.
+                }
+
+                await posDB.delete(STORES.CATEGORIES, categoryId);
+                this.showToast("Category deleted successfully!", "success");
+                this.loadCategoriesForAdmin();
+                this.loadCategoriesForOrdering();
+                this.loadProductsForAdmin(); // Products might be affected
+                this.loadProductsForOrdering('all'); // Refresh products in order view
+            } catch (error) {
+                console.error("Error deleting category:", error);
+                this.showToast("Failed to delete category.", "error");
+            }
+        }
+    },
+
+    async loadProductsForAdmin() {
+        try {
+            const products = await posDB.getAll(STORES.PRODUCTS);
+            const allCategories = await posDB.getAll(STORES.CATEGORIES);
+            const categoryMap = allCategories.reduce((map, cat) => {
+                map[cat.id] = cat.name;
+                return map;
+            }, {});
+
+            const listContainer = document.getElementById('products-list-admin');
+            listContainer.innerHTML = '<h4 class="text-md font-semibold mb-2 text-gray-600">Existing Products:</h4>'; // Reset header
+            if (products.length === 0) {
+                listContainer.innerHTML += '<p class="text-gray-500 italic">No products found.</p>';
+                return;
+            }
+            const ul = document.createElement('ul');
+            ul.className = 'space-y-2';
+            products.forEach(prod => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center p-3 bg-gray-50 rounded hover:bg-gray-100';
+                li.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <img src="${prod.imageUrl || 'https://placehold.co/40x40?text=N/A'}" alt="${prod.name}" class="h-10 w-10 rounded object-cover">
+                        <div>
+                            <span class="font-medium">${prod.name}</span>
+                            <span class="block text-xs text-gray-500">Category: ${categoryMap[prod.categoryId] || 'N/A'} | Price: $${prod.price.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="space-x-2">
+                        <button class="edit-product-btn text-blue-500 hover:text-blue-700 text-xs" data-product-id="${prod.id}">Edit</button>
+                        <button class="delete-product-btn text-red-500 hover:text-red-700 text-xs" data-product-id="${prod.id}">Delete</button>
+                    </div>
+                `;
+                ul.appendChild(li);
+            });
+            listContainer.appendChild(ul);
+        } catch (error) {
+            console.error("Error loading products for admin:", error);
+            this.showToast("Failed to load products for admin.", "error");
+        }
+    },
+
+    async handleSaveProduct() {
+        const productIdInput = document.getElementById('product-id');
+        const productName = document.getElementById('product-name-admin').value.trim();
+        const categoryId = document.getElementById('product-category-select-admin').value;
+        const productPrice = parseFloat(document.getElementById('product-price-admin').value);
+        const productImageUrl = document.getElementById('product-image-admin').value.trim();
+        const currentProductId = productIdInput.value ? parseInt(productIdInput.value) : null;
+
+        if (!productName || !categoryId || isNaN(productPrice) || productPrice < 0) {
+            this.showToast("Please fill all required product fields correctly.", "error");
+            return;
+        }
+
+        const productData = {
+            name: productName,
+            categoryId: parseInt(categoryId),
+            price: productPrice,
+            imageUrl: productImageUrl || 'https://placehold.co/100x100?text=NoImage' // Default placeholder
+        };
+
+        if (currentProductId) {
+            productData.id = currentProductId;
+        }
+
+        try {
+            if (currentProductId) {
+                await posDB.update(STORES.PRODUCTS, productData);
+                this.showToast("Product updated successfully!", "success");
+            } else {
+                await posDB.add(STORES.PRODUCTS, productData);
+                this.showToast("Product added successfully!", "success");
+            }
+            productIdInput.value = ''; // Clear ID for next new entry
+            document.getElementById('product-form').reset(); // Reset form
+            this.loadProductsForAdmin(); // Refresh list
+            this.loadProductsForOrdering('all'); // Refresh products in order view
+        } catch (error) {
+            console.error("Error saving product:", error);
+            this.showToast("Failed to save product.", "error");
+        }
+    },
+
+    async handleEditProduct(productId) {
+        try {
+            const product = await posDB.get(STORES.PRODUCTS, productId);
+            if (product) {
+                document.getElementById('product-id').value = product.id;
+                document.getElementById('product-name-admin').value = product.name;
+                document.getElementById('product-category-select-admin').value = product.categoryId;
+                document.getElementById('product-price-admin').value = product.price.toFixed(2);
+                document.getElementById('product-image-admin').value = product.imageUrl;
+                this.showToast(`Editing product: ${product.name}`, 'info');
+            }
+        } catch (error) {
+            console.error("Error fetching product for edit:", error);
+            this.showToast("Failed to load product for editing.", "error");
+        }
+    },
+
+    async handleDeleteProduct(productId) {
+        if (confirm("Are you sure you want to delete this product?")) {
+            try {
+                await posDB.delete(STORES.PRODUCTS, productId);
+                this.showToast("Product deleted successfully!", "success");
+                this.loadProductsForAdmin();
+                this.loadProductsForOrdering('all'); // Refresh products in order view
+            } catch (error) {
+                console.error("Error deleting product:", error);
+                this.showToast("Failed to delete product.", "error");
+            }
+        }
+    },
+
+    // --- Reports View Logic ---
+    async generateSalesReport() {
+        const period = document.getElementById('report-period').value;
+        let startDate, endDate = new Date(); // endDate is now for all periods
+
+        switch (period) {
+            case 'today':
+                startDate = new Date();
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'last7days':
+                startDate = new Date();
+                startDate.setDate(startDate.getDate() - 7);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'this_month':
+                startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+                startDate.setHours(0, 0, 0, 0);
+                // endDate is already end of today, which works for "this month up to now"
+                // If you need full month, then:
+                // endDate = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0);
+                // endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'all_time':
+                startDate = new Date(0); // Epoch time
+                break;
+            default:
+                startDate = new Date();
+                startDate.setHours(0,0,0,0);
+        }
+
+        try {
+            const orders = await posDB.getOrdersByPeriod(startDate, endDate);
+            const reportOutput = document.getElementById('report-output');
+            reportOutput.innerHTML = ''; // Clear previous report
+
+            if (orders.length === 0) {
+                reportOutput.innerHTML = '<p class="text-gray-500 italic">No sales data found for this period.</p>';
+                document.getElementById('total-orders-report').textContent = '0';
+                document.getElementById('total-revenue-report').textContent = '$0.00';
+                return;
+            }
+
+            let totalRevenue = 0;
+            const table = document.createElement('table');
+            table.className = 'min-w-full divide-y divide-gray-200 text-sm';
+            table.innerHTML = `
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                        <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                        <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Items</th>
+                        <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200"></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
+            orders.sort((a, b) => b.timestamp - a.timestamp); // Sort by most recent first
+
+            orders.forEach(order => {
+                totalRevenue += order.total;
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap">${order.id}</td>
+                    <td class="px-4 py-2 whitespace-nowrap">${new Date(order.timestamp).toLocaleDateString()} ${new Date(order.timestamp).toLocaleTimeString()}</td>
+                    <td class="px-4 py-2">${order.items.map(item => `${item.name} (x${item.quantity})`).join(', ')}</td>
+                    <td class="px-4 py-2 whitespace-nowrap">$${order.total.toFixed(2)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap">${order.paymentMethod}</td>
+                `;
+            });
+            reportOutput.appendChild(table);
+
+            // Update summary
+            document.getElementById('total-orders-report').textContent = orders.length;
+            document.getElementById('total-revenue-report').textContent = `$${totalRevenue.toFixed(2)}`;
+            this.showToast(`Report generated for ${period}.`, 'info');
+
+        } catch (error) {
+            console.error("Error generating sales report:", error);
+            this.showToast("Failed to generate sales report.", "error");
+            document.getElementById('report-output').innerHTML = '<p class="text-red-500 italic">Error generating report. Check console.</p>';
+            document.getElementById('total-orders-report').textContent = 'Error';
+            document.getElementById('total-revenue-report').textContent = 'Error';
+        }
+    }
+};
+
+// Initialize the application once the DOM is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+    app.init();
+});
+
+</script>
+</body>
+</html>
